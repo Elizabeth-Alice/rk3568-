@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RK3568 智能物联网控制中心</title>
+    <!-- 引入现代化 UI 框架：Tailwind CSS + DaisyUI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" />
+    <!-- 图标库：Heroicons -->
+    <script src="https://unpkg.com/heroicons@2.0.18/dist/heroicons.min.js"></script>
+    <!-- 视频流支持：HLS.js（用于 mjpeg-streamer 兼容） -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        :root {
+            --primary-color: #1e40af;
+            --secondary-color: #1e3a8a;
+            --success-color: #22c55e;
+            --warning-color: #f59e0b;
+            --danger-color: #ef4444;
+        }
+        .gradient-bg {
+            background: linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #3b82f6 100%);
+        }
+        .card-shadow {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .sensor-card {
+            transition: all 0.3s ease;
+        }
+        .sensor-card:hover {
+            transform: translateY(-4px);
+        }
+        .video-container {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 */
+            height: 0;
+            overflow: hidden;
+            background: #000;
+            border-radius: 1rem;
+        }
+        .video-container video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 1rem;
+        }
+        .status-dot {
+            height: 12px;
+            width: 12px;
+            background-color: #22c55e;
+            border-radius: 50%;
+            display: inline-block;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+
+    <!-- 顶部导航栏 -->
+    <div class="navbar bg-base-100 shadow-lg sticky top-0 z-50 card-shadow">
+        <div class="flex-1">
+            <a href="#" class="btn btn-ghost text-xl font-bold text-primary">
+                <svg class="w-8 h-8 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                </svg>
+                RK3568 智能控制中心
+            </a>
+        </div>
+        <div class="flex-none gap-2">
+            <div class="indicator">
+                <span class="indicator-item badge badge-success"></span>
+                <button id="system-status" class="btn btn-ghost btn-circle">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0114 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                    </svg>
+                </button>
+            </div>
+            <div class="dropdown dropdown-end">
+                <label tabindex="0" class="btn btn-ghost btn-circle avatar">
+                    <div class="w-10 rounded-full ring ring-primary ring-offset-base-100 ring-offset-2">
+                        <img src="https://ui-avatars.com/api/?name=RK&background=1e40af&color=fff" alt="User" />
+                    </div>
+</label>
+                <ul tabindex="0" class="mt-3 p-2 shadow menu menu-sm dropdown-content bg-base-100 rounded-box w-52">
+                    <li><a>系统信息</a></li>
+                    <li><a>日志查看</a></li>
+                    <li><a class="text-error">退出登录</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- 主容器 -->
+    <div class="container mx-auto p-4 md:p-6 max-w-7xl">
+
+<!-- 设备状态概览卡片 - 优化为2列布局 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <div class="card bg-base-100 card-shadow sensor-card">
+                <div class="card-body p-5">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">温度</h3>
+                            <p class="text-2xl font-bold text-success" id="temperature">-- °C</p>
+                        </div>
+                        <svg class="w-10 h-10 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m8.485-9.485l-.707.707M5.222 5.222l.707.707m12.364 0l-.707-.707M6.343 17.657l-.707-.707m12.728 0l-.777.777m-14.656 0l-.777-.777"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card bg-base-100 card-shadow sensor-card">
+                <div class="card-body p-5">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-sm font-medium text-gray-500">在线状态</h3>
+                            <p class="text-lg font-bold flex items-center gap-2">
+                                <span class="status-dot"></span>
+                                <span class="text-success">已连接</span>
+                            </p>
+                        </div>
+                        <svg class="w-10 h-10 text-success" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                        </svg>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 视频流 + 控制区 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+
+            <!-- 视频流区域 -->
+            <div class="lg:col-span-2">
+                <div class="card bg-base-100 card-shadow">
+                    <div class="card-body p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="card-title text-2xl">实时视频流</h2>
+                            <div class="flex gap-2">
+                                <button id="snapshot-btn" class="btn btn-success btn-sm">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                    </svg>
+                                    拍照
+                                </button>
+                                <button id="record-btn" class="btn btn-error btn-sm">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                    </svg>
+                                    <span id="record-text">开始录像</span>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="video-container">
+                            <video id="video-stream" controls autoplay muted class="rounded-lg"></video>
+                            <div id="stream-placeholder" class="flex flex-col items-center justify-center h-full text-gray-400">
+                                <svg class="w-16 h-16 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                                </svg>
+                                <p>正在连接视频流...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 设备控制面板 -->
+            <div>
+                <div class="card bg-base-100 card-shadow h-full">
+                    <div class="card-body p-6">
+                        <h2 class="card-title text-xl mb-4">设备控制</h2>
+
+                        <!-- LED 控制 -->
+                        <div class="mb-6">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="font-medium">LED 灯</label>
+                                <input type="checkbox" id="led-toggle" class="toggle toggle-primary" />
+                            </div>
+                            <div class="mt-3">
+                                <label class="text-sm text-gray-600">亮度调节</label>
+                                <input type="range" min="0" max="100" value="70" id="led-brightness" class="range range-xs range-primary" />
+                                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                    <span>0%</span>
+                                    <span id="led-value">70%</span>
+                                    <span>100%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 风扇控制 -->
+                        <div class="mb-6">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="font-medium">风扇</label>
+                                <input type="checkbox" id="fan-toggle" class="toggle toggle-success" />
+                            </div>
+                            <div class="mt-3">
+                                <label class="text-sm text-gray-600">风速控制</label>
+                                <input type="range" min="0" max="100" value="50" id="fan-speed" class="range range-xs range-success" />
+                                <div class="flex justify-between text-xs text-gray-500 mt-1">
+                                    <span>停止</span>
+                                    <span id="fan-value">50%</span>
+                                    <span>高速</span>
+                                </div>
+                            </div>
+                            <div class="flex gap-2 mt-3">
+                                <button id="fan-forward" class="btn btn-sm btn-outline flex-1">正转</button>
+                                <button id="fan-reverse" class="btn btn-sm btn-outline flex-1">反转</button>
+                            </div>
+                        </div>
+
+                        <!-- 蜂鸣器 -->
+                        <div>
+                            <label class="font-medium">蜂鸣器</label>
+                            <button id="buzzer-btn" class="btn btn-warning btn-sm w-full mt-2">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586m4.707-2.293a1 1 0 00-1.414-1.414l-1.5 1.5m0 0a1 1 0 001.414 1.414l1.5-1.5m-1.5 1.5l-1.5 1.5a1 1 0 001.414-1.414l-1.5-1.5"></path>
+                                </svg>
+                                触发警报
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 传感器数据展示 - 优化为5列布局 -->
+        <div class="card bg-base-100 card-shadow mb-6">
+            <div class="card-body p-6">
+                <h2 class="card-title text-xl mb-4">传感器实时数据</h2>
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                    <!-- 温度传感器 -->
+                    <div class="text-center p-4 bg-base-200 rounded-xl">
+                        <div class="text-3xl mb-1" id="sensor1-icon">🌡️</div>
+                        <p class="text-sm text-gray-600">温度</p>
+                        <p class="text-xl font-bold" id="sensor1">--</p>
+                    </div>
+                    <!-- 湿度传感器 -->
+                    <div class="text-center p-4 bg-base-200 rounded-xl">
+                        <div class="text-3xl mb-1">💧</div>
+                        <p class="text-sm text-gray-600">湿度</p>
+                        <p class="text-xl font-bold" id="sensor2">--</p>
+                    </div>
+                    <!-- 热敏传感器（对应火焰检测） -->
+                    <div class="text-center p-4 bg-base-200 rounded-xl">
+                        <div class="text-3xl mb-1">🔥</div>
+                        <p class="text-sm text-gray-600">热敏/火焰</p>
+                        <p class="text-xl font-bold text-success" id="sensor4">正常</p>
+                    </div>
+                    <!-- 红外传感器（对应人体检测） -->
+                    <div class="text-center p-4 bg-base-200 rounded-xl">
+                        <div class="text-3xl mb-1">🚶</div>
+                        <p class="text-sm text-gray-600">红外/人体</p>
+                        <p class="text-xl font-bold text-success" id="sensor5">未检测</p>
+                    </div>
+                    <!-- 光敏传感器（对应光照强度） -->
+                    <div class="text-center p-4 bg-base-200 rounded-xl">
+                        <div class="text-3xl mb-1">⚡</div>
+                        <p class="text-sm text-gray-600">光敏/光照</p>
+                        <p class="text-xl font-bold" id="sensor6">-- lx</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 日志与操作记录 -->
+        <div class="card bg-base-100 card-shadow">
+            <div class="card-body p-6">
+                <h2 class="card-title text-xl mb-4">操作日志</h2>
+                <div class="h-48 overflow-y-auto bg-base-200 rounded-lg p-4 font-mono text-sm" id="log-area">
+                    <p class="text-gray-500">系统启动完成，等待连接...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 脚本：连接后端 CGI 与数据更新 -->
+    <script>
+        // 全局变量
+        const video = document.getElementById('video-stream');
+        const placeholder = document.getElementById('stream-placeholder');
+        const recordBtn = document.getElementById('record-btn');
+        const recordText = document.getElementById('record-text');
+        let isRecording = false;
+        let streamSource = null;
+
+        // 1. 拍照按钮事件绑定
+        document.getElementById('snapshot-btn').addEventListener('click', () => {
+            takeSnapshot();
+        });
+
+        // 更新设备状态数据
+        function updateDeviceStatus() {
+            fetch('/api/device_state')
+                .then(response => response.json())
+                .then(data => {
+                    // 更新温度显示
+                    document.getElementById('temperature').textContent = data.temperature.toFixed(1) + ' °C';
+                    document.getElementById('sensor1').textContent = data.temperature.toFixed(1);
+                    
+                    // 更新湿度显示
+                    document.getElementById('sensor2').textContent = data.humidity.toFixed(1);
+                    
+                    // 更新LED状态
+                    const ledToggle = document.getElementById('led-toggle');
+                    const ledValue = document.getElementById('led-value');
+                    ledToggle.checked = data.led_state === 1;
+                    ledValue.textContent = data.led_brightness + '%';
+                    document.getElementById('led-brightness').value = data.led_brightness;
+                    
+                    // 更新风扇状态
+                    const fanToggle = document.getElementById('fan-toggle');
+                    const fanValue = document.getElementById('fan-value');
+                    fanToggle.checked = data.fan_state === 1;
+                    fanValue.textContent = data.fan_speed + '%';
+                    document.getElementById('fan-speed').value = data.fan_speed;
+                    
+                    // 更新风扇方向按钮状态
+                    const fanForward = document.getElementById('fan-forward');
+                    const fanReverse = document.getElementById('fan-reverse');
+                    if (data.fan_dir === 0) {
+                        fanForward.classList.add('btn-primary');
+                        fanReverse.classList.remove('btn-primary');
+                    } else {
+                        fanForward.classList.remove('btn-primary');
+                        fanReverse.classList.add('btn-primary');
+                    }
+                    
+                    // 更新热敏传感器数据（对应火焰检测）
+                    const thermistorElement = document.getElementById('sensor4');
+                    if (data.thermistor_value > 50) { // 假设阈值50以上为异常
+                        thermistorElement.textContent = '异常高温';
+                        thermistorElement.className = 'text-xl font-bold text-error';
+                    } else {
+                        thermistorElement.textContent = '正常';
+                        thermistorElement.className = 'text-xl font-bold text-success';
+                    }
+                    
+                    // 更新红外传感器数据（对应人体检测）
+                    const infraredElement = document.getElementById('sensor5');
+                    if (data.infrared_state === 1) {
+                        infraredElement.textContent = '检测到人体';
+                        infraredElement.className = 'text-xl font-bold text-error';
+                    } else {
+                        infraredElement.textContent = '未检测';
+                        infraredElement.className = 'text-xl font-bold text-success';
+                    }
+                    
+                    // 更新光敏传感器数据（对应光照强度）
+                    const lightElement = document.getElementById('sensor6');
+                    lightElement.textContent = data.light_intensity + ' lx';
+                    
+                    // 添加日志
+                    addLog(`📊 数据更新: 温度${data.temperature.toFixed(1)}°C 湿度${data.humidity.toFixed(1)}% LED${data.led_state} 风扇${data.fan_state} 红外${data.infrared_state} 光照${data.light_intensity} 热敏${data.thermistor_value}`);
+                })
+                .catch(error => {
+                    console.error('获取设备状态失败:', error);
+                    addLog('❌ 获取设备状态失败');
+                });
+        }
+
+        // 添加日志函数
+        function addLog(message) {
+            const logArea = document.getElementById('log-area');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('p');
+            logEntry.innerHTML = `<span class="text-gray-400">[${timestamp}]</span> ${message}`;
+            logArea.appendChild(logEntry);
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        // 1. 初始化视频流 (mjpeg-streamer 示例)
+        // 初始化视频流
+        function initVideoStream() {
+                // 直接访问8081端口的视频流服务，不再通过8080端口代理
+                const streamUrl = 'http://' + window.location.hostname + ':8081/?action=stream';
+                // 放弃HLS，直接用MJPEG（mjpeg-streamer原生流）
+                // 注意：MJPEG在video标签兼容性差，改用img标签更稳定
+                const videoContainer = document.querySelector('.video-container');
+                // 隐藏原video标签，改用img加载MJPEG流
+                video.style.display = 'none';
+                const mjpegImg = document.createElement('img');
+                mjpegImg.src = streamUrl;
+                mjpegImg.style.cssText =
+                    'position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 1rem;';
+                mjpegImg.onload = () => {
+                    placeholder.style.display = 'none';
+                };
+                mjpegImg.onerror = () => {
+                    addLog('❌ 视频流加载失败，请检查服务是否启动');
+                };
+                videoContainer.appendChild(mjpegImg);
+            }
+        
+        // 拍照功能
+        function takeSnapshot() {
+            // 使用新的 /api/snapshot API
+            const snapshotUrl = '/api/snapshot';
+            
+            fetch(snapshotUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.blob();
+                })
+                .then(blob => {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'snapshot_' + new Date().toISOString().replace(/[:.]/g, '-') + '.jpg';
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    addLog("📸 拍照成功，图片已下载");
+                })
+                .catch(error => {
+                    console.error("拍照失败:", error);
+                    addLog("❌ 拍照失败: " + error.message);
+                });
+        }
+
+        // 3. 录像控制（需要后端支持）
+        recordBtn.addEventListener('click', () => {
+            if (!isRecording) {
+                // 开始录像逻辑
+                addLog('🎥 开始录像（功能待实现）');
+                recordBtn.classList.remove('btn-error');
+                recordBtn.classList.add('btn-success');
+                recordText.textContent = '停止录像';
+                isRecording = true;
+            } else {
+                // 停止录像逻辑
+                addLog('⏹️ 停止录像（功能待实现）');
+                recordBtn.classList.remove('btn-success');
+                recordBtn.classList.add('btn-error');
+                recordText.textContent = '开始录像';
+                isRecording = false;
+            }
+        });
+
+        // 4. LED控制
+        document.getElementById('led-toggle').addEventListener('change', (e) => {
+            const state = e.target.checked ? 1 : 0;
+            const brightness = document.getElementById('led-brightness').value;
+            
+            // 调用LED控制API
+            fetch(`/api/led_control?state=${state}&brightness=${brightness}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        addLog(`💡 LED ${state ? '开启' : '关闭'}`);
+                    } else {
+                        addLog(`❌ LED控制失败: ${data.message}`);
+                        // 恢复开关状态
+                        e.target.checked = !state;
+                    }
+                })
+                .catch(error => {
+                    console.error('LED控制API调用失败:', error);
+                    addLog('❌ LED控制API调用失败');
+                    // 恢复开关状态
+                    e.target.checked = !state;
+                });
+        });
+
+        document.getElementById('led-brightness').addEventListener('input', (e) => {
+            const brightness = e.target.value;
+            document.getElementById('led-value').textContent = brightness + '%';
+            
+            // 只有当LED开启时才发送亮度控制命令
+            const ledToggle = document.getElementById('led-toggle');
+            if (ledToggle.checked) {
+                // 调用LED控制API
+                fetch(`/api/led_control?brightness=${brightness}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            addLog(`💡 LED亮度调整为 ${brightness}%`);
+                        } else {
+                            addLog(`❌ LED亮度控制失败: ${data.message}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('LED亮度控制API调用失败:', error);
+                        addLog('❌ LED亮度控制API调用失败');
+                    });
+            } else {
+                addLog(`💡 LED亮度调整为 ${brightness}% (LED未开启)`);
+            }
+        });
+
+        // 5. 风扇控制
+        document.getElementById('fan-toggle').addEventListener('change', (e) => {
+            const state = e.target.checked ? 1 : 0;
+            const speed = document.getElementById('fan-speed').value;
+            const direction = document.getElementById('fan-forward').classList.contains('btn-primary') ? 0 : 1;
+            
+            // 调用风扇控制API
+            fetch(`/api/fan_control?state=${state}&speed=${speed}&direction=${direction}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        addLog(`💨 风扇 ${state ? '开启' : '关闭'}`);
+                    } else {
+                        addLog(`❌ 风扇控制失败: ${data.message}`);
+                        // 恢复开关状态
+                        e.target.checked = !state;
+                    }
+                })
+                .catch(error => {
+                    console.error('风扇控制API调用失败:', error);
+                    addLog('❌ 风扇控制API调用失败');
+                    // 恢复开关状态
+                    e.target.checked = !state;
+                });
+        });
+
+        document.getElementById('fan-speed').addEventListener('input', (e) => {
+            const speed = e.target.value;
+            document.getElementById('fan-value').textContent = speed + '%';
+            
+            // 只有当风扇开启时才发送速度控制命令
+            const fanToggle = document.getElementById('fan-toggle');
+            if (fanToggle.checked) {
+                const direction = document.getElementById('fan-forward').classList.contains('btn-primary') ? 0 : 1;
+                
+                // 调用风扇控制API
+                fetch(`/api/fan_control?speed=${speed}&direction=${direction}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            addLog(`💨 风扇速度调整为 ${speed}%`);
+                        } else {
+                            addLog(`❌ 风扇速度控制失败: ${data.message}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('风扇速度控制API调用失败:', error);
+                        addLog('❌ 风扇速度控制API调用失败');
+                    });
+            } else {
+                addLog(`💨 风扇速度调整为 ${speed}% (风扇未开启)`);
+            }
+        });
+
+        document.getElementById('fan-forward').addEventListener('click', () => {
+            // 只有当风扇开启时才发送方向控制命令
+            const fanToggle = document.getElementById('fan-toggle');
+            if (fanToggle.checked) {
+                const speed = document.getElementById('fan-speed').value;
+                
+                // 调用风扇控制API
+                fetch(`/api/fan_control?direction=0&speed=${speed}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            addLog('💨 风扇设置为正转');
+                            // 更新按钮状态
+                            document.getElementById('fan-forward').classList.add('btn-primary');
+                            document.getElementById('fan-reverse').classList.remove('btn-primary');
+                        } else {
+                            addLog(`❌ 风扇方向控制失败: ${data.message}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('风扇方向控制API调用失败:', error);
+                        addLog('❌ 风扇方向控制API调用失败');
+                    });
+            } else {
+                addLog('💨 风扇设置为正转 (风扇未开启)');
+                // 更新按钮状态
+                document.getElementById('fan-forward').classList.add('btn-primary');
+                document.getElementById('fan-reverse').classList.remove('btn-primary');
+            }
+        });
+
+        document.getElementById('fan-reverse').addEventListener('click', () => {
+            // 只有当风扇开启时才发送方向控制命令
+            const fanToggle = document.getElementById('fan-toggle');
+            if (fanToggle.checked) {
+                const speed = document.getElementById('fan-speed').value;
+                
+                // 调用风扇控制API
+                fetch(`/api/fan_control?direction=1&speed=${speed}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.status === 'success') {
+                            addLog('💨 风扇设置为反转');
+                            // 更新按钮状态
+                            document.getElementById('fan-forward').classList.remove('btn-primary');
+                            document.getElementById('fan-reverse').classList.add('btn-primary');
+                        } else {
+                            addLog(`❌ 风扇方向控制失败: ${data.message}`);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('风扇方向控制API调用失败:', error);
+                        addLog('❌ 风扇方向控制API调用失败');
+                    });
+            } else {
+                addLog('💨 风扇设置为反转 (风扇未开启)');
+                // 更新按钮状态
+                document.getElementById('fan-forward').classList.remove('btn-primary');
+                document.getElementById('fan-reverse').classList.add('btn-primary');
+            }
+        });
+
+        // 6. 蜂鸣器控制
+        document.getElementById('buzzer-btn').addEventListener('click', () => {
+            addLog('🔊 触发蜂鸣器警报');
+            // 这里可以添加控制蜂鸣器的API调用
+        });
+
+        // 7. 定时更新设备状态（每秒更新）
+        setInterval(updateDeviceStatus, 1000);
+
+        // 8. 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            addLog('🌐 页面加载完成，开始连接设备...');
+            updateDeviceStatus(); // 立即更新一次状态
+            initVideoStream(); // 启动视频流连接
+        });
+    </script>
+</body>
+</html>
